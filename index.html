@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mars weather · InSight</title>
+<style>
+  :root {
+    --bg: #1c1412; --fg: #f1e4d8; --muted: #a8917f;
+    --line: #3d2b24; --accent: #e8825a;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6efe8; --fg: #2a1c16; --muted: #7a6355; --line: #dccbbd; --accent: #b4491f; color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { margin: 0 0 .25rem; }
+  p.sub { margin: 0 0 1.5rem; color: var(--muted); max-width: 60ch; }
+  #status { margin: 1rem 0; color: var(--muted); }
+  #status.error { color: var(--accent); }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse;}
+  th, td { padding: .5rem .75rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  td.na { color: var(--muted); }
+  footer { margin-top: 2rem; color: var(--muted);}
+  a { color: var(--accent); }
+  .banner {
+    --banner-ratio: 22 / 9;          /* change to 21 / 9, 24 / 9, etc. */
+    position: relative;
+    margin: 2.5rem 0 0;
+    aspect-ratio: var(--banner-ratio);
+    overflow: hidden;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #3d2b24, #1c1412); /* shown until the image loads */
+  }
+  .banner img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;               /* fills the frame and crops instead of stretching */
+    object-position: center;         /* e.g. "center 40%" to shift the crop vertically */
+  }
+  /* Top and bottom shade, fading into the page background */
+  .banner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(to bottom, var(--bg) 0%, transparent 28%, transparent 72%, var(--bg) 100%),
+      linear-gradient(to bottom, rgba(0,0,0,.35), transparent 40%, transparent 60%, rgba(0,0,0,.45));
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Weather at Elysium Planitia</h1>
+  <p class="sub">Per-sol summaries from NASA's InSight lander. Missing values mean the sensor
+     had no data that sol.</p>
+  <div id="status">Loading…</div>
+  <div class="scroll">
+    <table id="table" hidden>
+      <thead>
+        <tr>
+          <th>Sol</th><th>Season</th><th>Date (UTC)</th>
+          <th>Temp avg °C</th><th>Min</th><th>Max</th>
+          <th>Wind m/s</th><th>Pressure Pa</th><th>Wind from</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="banner">
+    <img src="./static/insight.jpg" alt="InSight rover" loading="lazy">
+  </div>
+  <footer>
+    Data: <a href="https://api.nasa.gov/">NASA Open APIs</a> · InSight Mars Weather Service
+  </footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 1) => (typeof v === "number" ? v.toFixed(d) : null);
+
+function cell(text) {
+  const td = document.createElement("td");
+  td.textContent = text ?? "–";
+  if (text == null) td.className = "na";
+  return td;
+}
+
+async function load() {
+  const status = $("status");
+  try {
+    const res = await fetch("/api/weather");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+
+    const sols = data.sol_keys || [];
+    if (!sols.length) {
+      status.textContent = "NASA returned no sols right now. The InSight service is often empty or stale.";
+      return;
+    }
+
+    const body = $("table").querySelector("tbody");
+    for (const sol of sols.slice().reverse()) {
+      const d = data[sol] || {};
+      const row = document.createElement("tr");
+      const wd = d.WD && d.WD.most_common;
+      row.append(
+        cell(sol),
+        cell(d.Season),
+        cell(d.First_UTC ? d.First_UTC.slice(0, 10) : null),
+        cell(fmt(d.AT && d.AT.av)),
+        cell(fmt(d.AT && d.AT.mn)),
+        cell(fmt(d.AT && d.AT.mx)),
+        cell(fmt(d.HWS && d.HWS.av, 2)),
+        cell(fmt(d.PRE && d.PRE.av, 0)),
+        cell(wd ? wd.compass_point : null),
+      );
+      body.append(row);
+    }
+    $("table").hidden = false;
+    status.textContent = `Showing ${sols.length} sols, newest first.`;
+  } catch (err) {
+    status.className = "error";
+    status.textContent = "Could not load weather: " + err.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

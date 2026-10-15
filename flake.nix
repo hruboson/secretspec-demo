@@ -7,31 +7,31 @@
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      mkApp = pkgs: name: provider: extraInputs:
+        let
+          drv = pkgs.writeShellApplication {
+            inherit name;
+            runtimeInputs = with pkgs; [ python3 secretspec ] ++ extraInputs;
+            text = ''
+              exec secretspec run --provider ${provider} -- python server.py "$@"
+            '';
+          };
+        in { type = "app"; program = "${drv}/bin/${name}"; };
     in
     {
-      packages = forAllSystems (pkgs: {
-        default = pkgs.writeShellApplication {
-          name = "mars-weather";
-          runtimeInputs = [ pkgs.python3 pkgs.secretspec ];
-          text = ''
-            exec secretspec run --provider "''${SECRETSPEC_PROVIDER:-keyring}" -- python server.py "$@"
-          '';
-        };
-      });
-
       apps = forAllSystems (pkgs: {
-        default = {
-          type = "app";
-          program = "${self.packages.${pkgs.system}.default}/bin/mars-weather";
-        };
+        default = mkApp pkgs "mars-weather" "dotenv" [ ];
+        bitwarden = mkApp pkgs "mars-weather-bitwarden" "bw" [ pkgs.bitwarden-cli ]; # last argument is extraInputs
       });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.python3 pkgs.secretspec ];
+          packages = with pkgs; [ python3 secretspec bitwarden-cli ];
+          SECRETSPEC_PROVIDER = "dotenv";
           shellHook = ''
-            echo "Run: nix run (or: secretspec run -- python server.py)"
-            echo "Set key once: secretspec set NASA_API_KEY"
+            echo "SecretSpec provider for this shell: $SECRETSPEC_PROVIDER"
+            echo "Try: secretspec set NASA_API_KEY"
           '';
         };
       });
